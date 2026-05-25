@@ -28,7 +28,7 @@ Key architectural properties:
 
 ![Piste Architecture Diagram](architecture.png)
 
-**[View source →](FINAL.mermaid)** | [Open in Mermaid Live →](https://mermaid.live)
+**[View source →](FINAL.mermaid)**
 
 ---
 
