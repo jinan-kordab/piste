@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Piste Architecture — Export</title>
+<style>
+  body { margin: 0; padding: 40px; background: #fff; display: flex; justify-content: center; }
+  #diagram { max-width: 100%; }
+  /* High-res export: renders at full resolution regardless of zoom */
+</style>
+</head>
+<body>
+<div id="diagram">
+  <pre class="mermaid">
+flowchart TB
+  H["Human<br/>(reader / journalist)"]
+
+  subgraph UIL["User Interaction Layer — Vanilla JS · multilingual · port 3000"]
+    UI_CLAIM["Claim Input + Optional Context<br/>(textarea + submit)"]
+    UI_PROGRESS["Pipeline Progress<br/>(SSE stage-by-stage live indicator)"]
+    UI_VERDICT["Verdict Card<br/>(7-way PolitiFact badge · distribution bars · sources)"]
+    UI_AUDIT["Audit & Replay View<br/>expandable stage cards · input/output snapshots<br/>per-source classifications · replay comparison"]
+    UI_CLAIM --> UI_PROGRESS --> UI_VERDICT
+    UI_VERDICT --> UI_AUDIT
+  end
+
+  subgraph GW["API Gateway — FastAPI 0.115 + Uvicorn · Pydantic v2 · Server-Sent Events"]
+    API["Request validation + SSE streaming"]
+    IDEMP["Idempotency Guard<br/>Redis 7.2<br/>SHA-256 + semantic near-duplicate vs FAISS"]
+    API --- IDEMP
+  end
+
+  subgraph PIPE["Fact-Check Platform — DSPy 2.6 over LiteLLM · 4-Stage Pipeline · multilingual"]
+    L26_IN["Claim{ text, locale, run_id }"]
+    subgraph L26_S1["Stage 1 — Claim Processing"]
+      L26_S1a["Check-Worthiness Detector"]
+      L26_S1b["Atomic Claim Decomposer"]
+      L26_S1a -- "WorthyClaim{ text, score }" --> L26_S1b
+    end
+    subgraph L26_S2["Stage 2 — Blind Retrieval"]
+      L26_GEN["Search-Decision Generator"]
+      L26_RET["Blind Retriever"]
+      L26_GEN -- "SEARCH: query (NL only)" --> L26_RET
+      L26_RET -- "Result: text (NL only)" --> L26_GEN
+    end
+    L26_CRED["* Per-Domain Credibility Scorer<br/>Lin et al. (2023) DB<br/>TODO"]
+    L26_REFINE["* Intelligent Query Refiner<br/>TODO"]
+    L26_MAP["Canonical Evidence Mapper"]
+    subgraph L26_S3["Stage 3 — Per-Source Classification (asyncio.gather)"]
+      L26_F1["Classifier #1"]
+      L26_F2["Classifier #2"]
+      L26_FN["Classifier #N"]
+    end
+    L26_CG{"Criticality Gate"}
+    L26_VA["Verdict Aggregator"]
+    L26_HR["Editorial Review Panel"]
+    subgraph L26_OFF["* VERIFAID Offline Dataset Pipeline — TODO"]
+      L26_OFF_M1["M1: Generate Claims<br/>(LLM · multilingual)"]
+      L26_OFF_M2["M2: Enrich + Label<br/>+ FAISS Index"]
+      L26_OFF_M1 -- "ClaimBatch{ locale }" --> L26_OFF_M2
+    end
+    L26_OUT["VerdictRecord{ run_id, claim_id, label,<br/>distribution, evidence[], audit_url, locale }"]
+    L26_PG["Append-Only Audit Ledger<br/>PostgreSQL 16"]
+    L26_FAISS["Tier-1 Vector Evidence Cache<br/>FAISS<br/>TODO"]
+    L26_REDIS["Idempotency / Verdict Cache<br/>Redis 7.2"]
+    L26_DSPY["* DSPy Compiler + Framework<br/>TODO"]
+    L26_OBS["+ Observability sidecar<br/>LangSmith · Prometheus · Grafana<br/>TODO"]
+    L26_REPLAY["Replay Engine<br/>replay historical claims through<br/>updated pipeline · compare verdicts"]
+
+    L26_IN --> L26_S1a
+    L26_S1b -- "AtomicClaim[]" --> L26_GEN
+    L26_RET -- "RawEvidence[]" --> L26_CRED
+    L26_CRED -- "ScoredEvidence[]" --> L26_MAP
+    L26_MAP -- "CanonicalEvidence[]" --> L26_F1
+    L26_MAP -- "CanonicalEvidence[]" --> L26_F2
+    L26_MAP -- "CanonicalEvidence[]" --> L26_FN
+    L26_F1 -- "Classification" --> L26_CG
+    L26_F2 -- "Classification" --> L26_CG
+    L26_FN -- "Classification" --> L26_CG
+    L26_CG -- low --> L26_VA --> L26_OUT
+    L26_CG -- high --> L26_HR --> L26_OUT
+
+    L26_S1 -. append .-> L26_PG
+    L26_S2 -. append .-> L26_PG
+    L26_CRED -. append .-> L26_PG
+    L26_MAP -. append .-> L26_PG
+    L26_S3 -. append .-> L26_PG
+    L26_CG -. append .-> L26_PG
+    L26_VA -. append .-> L26_PG
+
+    L26_S2 -. "Loop 1: insufficient -> Refiner" .-> L26_REFINE
+    L26_REFINE -. "refined queries" .-> L26_S2
+    L26_MAP -. "Loop 2: write-back to FAISS" .-> L26_FAISS
+    L26_MAP -. "Loop 2: enrich offline index" .-> L26_OFF
+    L26_OFF -. "updated FAISS index" .-> L26_FAISS
+    L26_OFF -. "updated FAISS index" .-> L26_RET
+    L26_OUT -. "Loop 3: DSPy re-optimize" .-> L26_DSPY
+    L26_DSPY -. "re-optimized modules" .-> L26_S1
+    L26_DSPY -. "re-optimized modules" .-> L26_S2
+    L26_DSPY -. "re-optimized modules" .-> L26_S3
+
+    L26_PG -. "read audit trail" .-> L26_REPLAY
+    L26_REPLAY -. "replay historical claim" .-> L26_IN
+    L26_REPLAY -. "compare old vs new verdict" .-> L26_OUT
+
+    L26_S1 -. traces / metrics .-> L26_OBS
+    L26_S2 -. traces / metrics .-> L26_OBS
+    L26_S3 -. traces / metrics .-> L26_OBS
+    L26_CG -. traces / metrics .-> L26_OBS
+    L26_VA -. traces / metrics .-> L26_OBS
+    L26_REPLAY -. traces / metrics .-> L26_OBS
+  end
+
+  H --> UI_CLAIM
+  UI_CLAIM --> API
+  API --> L26_IN
+  L26_OUT --> API
+  API -- "SSE stream" --> UI_PROGRESS
+  API -- "verdict JSON" --> UI_VERDICT
+  H -.-> UI_VERDICT
+  L26_PG -. "/audit/{run_id}" .-> API
+  API -- "audit trail" --> UI_AUDIT
+  H -.-> UI_AUDIT
+  UI_AUDIT --> API
+  API -- "stage-by-stage trace" --> UI_AUDIT
+  API -. "fetch audit trail" .-> L26_PG
+  L26_PG -. "run history + evidence" .-> API
+  UI_AUDIT -. "modify queries + replay" .-> API
+  API -. "trigger replay" .-> L26_REPLAY
+  L26_REPLAY -. "replay result" .-> API
+  API -- "comparison view" --> UI_AUDIT
+
+  UI3_TODO["Community Discussion View<br/>(TODO)"]
+  UI4_TODO["Operator Dashboard<br/>(TODO)"]
+  H -.-> UI3_TODO
+  H -.-> UI4_TODO
+  UI3_TODO --> API
+  L26_OBS -. "traces / metrics" .-> API
+  API --> UI4_TODO
+  API -. "user feedback (Loop 3)" .-> L26_DSPY
+
+  IDEMP <-. "SHA-256 + semantic dedup" .-> L26_REDIS
+  API -. traces / metrics .-> L26_OBS
+
+  classDef implemented fill:#2f9e44,stroke:#1b6e2b,color:#fff,stroke-width:2px
+  classDef todo fill:#f59e0b,stroke:#d97706,color:#000,stroke-width:2px
+  classDef replay fill:#845ef7,stroke:#5f3dc4,color:#fff,stroke-width:2px
+  class L26_CRED,L26_REFINE,L26_OFF,L26_OFF_M1,L26_OFF_M2,L26_DSPY,L26_FAISS,L26_OBS,UI3_TODO,UI4_TODO todo
+  class L26_REPLAY,UI_AUDIT replay
+
+  COPYRIGHT["&copy; 2026 Jinan Kordab. All rights reserved.<br>Designed &amp; implemented by Jinan Kordab."]
+  H --- COPYRIGHT
+  classDef copyright fill:#ffffff,stroke:#000000,color:#000000,stroke-width:2px
+  class COPYRIGHT copyright
+  </pre>
+</div>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  import elkLayouts from 'https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0.1/dist/mermaid-layout-elk.esm.min.mjs';
+  
+  mermaid.registerLayoutLoaders(elkLayouts);
+  
+  mermaid.initialize({ 
+    startOnLoad: true, 
+    theme: 'default',
+    layout: 'elk',
+    elk: {
+      mergeEdges: false,
+      nodePlacementStrategy: 'NETWORK_SIMPLEX'
+    },
+    flowchart: { useMaxWidth: false }
+  });
+</script>
+</body>
+</html>
