@@ -1,0 +1,44 @@
+# Piste — .dockerignore
+# Exclude files not needed in Docker build context
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+.venv/
+venv/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# Docs
+*.md
+!README.md
+
+# Docker
+docker-compose*.yml
+Dockerfile*
+
+# Test
+.pytest_cache/
+test_*.py
+
+# Data
+*.db
+*.sqlite3
+data/
+*.faiss
+*.index
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

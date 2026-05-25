@@ -1,0 +1,15 @@
+# ============================================================
+# Piste — Frontend Dockerfile (static HTML served by Python http.server)
+# Single-file vanilla JS UI — no build step, no npm, no node_modules
+# ============================================================
+FROM python:3.12-alpine
+
+WORKDIR /app
+
+# Copy the single-page application
+COPY index.html .
+
+EXPOSE 3000
+
+# Serve the static file on port 3000
+CMD ["python", "-m", "http.server", "3000"]

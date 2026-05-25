@@ -1,0 +1,72 @@
+# ============================================================
+# Piste — .gitignore
+# ============================================================
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+*.manifest
+*.spec
+
+# --- Virtual environments ---
+venv/
+.venv/
+env/
+.env
+.venv*
+
+# --- Docker ---
+docker-compose.override.yml
+
+# --- IDE / Editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --- Environment files (contains secrets) ---
+.env
+!.env.example
+
+# --- Data files ---
+*.db
+*.sqlite3
+data/
+*.index
+*.faiss
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+*.ipynb
+
+# --- Node (if frontend ever adds packages) ---
+node_modules/
+.next/
+.npm/
+package-lock.json
+yarn.lock
+
+# --- Testing ---
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+
+# --- OS ---
+*.tmp
+*.temp

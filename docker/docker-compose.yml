@@ -1,0 +1,91 @@
+# Copyright (c) 2026 Jinan Kordab
+# SPDX-License-Identifier: MIT
+
+# ============================================================
+# Piste — Docker Compose
+# Services: PostgreSQL 16, Redis 7.2, Backend, Frontend
+# ============================================================
+version: "3.9"
+
+services:
+  # --- PostgreSQL 16 — Append-Only Audit Ledger [C5] ---
+  postgres:
+    image: postgres:16-alpine
+    container_name: piste-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: piste
+      POSTGRES_PASSWORD: piste
+      POSTGRES_DB: piste
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U piste"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --- Redis 7.2 — Idempotency Guard + Verdict Cache [C7] ---
+  redis:
+    image: redis:7.2-alpine
+    container_name: piste-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --- FastAPI Backend ---
+  backend:
+    build:
+      context: ../backend
+      dockerfile: ../docker/Dockerfile.backend
+    container_name: piste-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      PYTHONPATH: /
+      OMP_NUM_THREADS: 1
+      OPENBLAS_NUM_THREADS: 1
+      KMP_DUPLICATE_LIB_OK: TRUE
+      DATABASE_URL: postgresql+asyncpg://piste:piste@postgres:5432/piste
+      DATABASE_URL_SYNC: postgresql+psycopg2://piste:piste@postgres:5432/piste
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../backend:/app
+      - ../pipeline:/pipeline
+      - ../.env:/app/.env
+
+  # --- Static Frontend (single index.html served by Python http.server) ---
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: ../docker/Dockerfile.frontend
+    container_name: piste-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # This tells the UI which backend URL to call
+      BACKEND_URL: http://backend:8000
+    depends_on:
+      - backend
+    volumes:
+      - ../frontend/index.html:/app/index.html
+
+volumes:
+  pgdata:
+  redisdata:

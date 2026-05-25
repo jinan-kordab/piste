@@ -1,0 +1,1134 @@
+<!-- Copyright (c) 2026 Jinan Kordab -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Piste — AI Fact-Checking</title>
+<style>
+  /* ─── Reset & Base ─── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #09090b;
+    color: #fafafa;
+    min-height: 100vh;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ─── Layout ─── */
+  .app { max-width: 640px; margin: 0 auto; padding: 48px 16px; }
+
+  /* ─── Header ─── */
+  .header { text-align: center; margin-bottom: 40px; }
+  .header h1 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; }
+  .header h1 span { color: #60a5fa; }
+  .header p { margin-top: 6px; font-size: 0.8125rem; color: #71717a; }
+
+  /* Language toggle */
+  .lang-btn {
+    padding: 3px 10px; border-radius: 6px; border: 1px solid #3f3f46;
+    background: transparent; color: #71717a; font-size: 0.6875rem; font-weight: 600;
+    font-family: inherit; cursor: pointer; transition: all 0.15s; margin: 0 2px;
+  }
+  .lang-btn:hover { color: #e4e4e7; border-color: #52525b; }
+  .lang-btn.active { background: #2563eb; border-color: #2563eb; color: #fff; }
+
+  /* ─── Form ─── */
+  .form { display: flex; flex-direction: column; gap: 12px; }
+  .form textarea, .form input[type="text"] {
+    width: 100%;
+    padding: 12px 16px;
+    border-radius: 12px;
+    border: 1px solid #27272a;
+    background: #18181b;
+    color: #fafafa;
+    font-size: 0.8125rem;
+    font-family: inherit;
+    line-height: 1.5;
+    outline: none;
+    transition: border-color 0.15s;
+    resize: vertical;
+  }
+  .form textarea:focus, .form input:focus { border-color: #3b82f6; }
+  .form textarea::placeholder, .form input::placeholder { color: #52525b; }
+  .form textarea:disabled, .form input:disabled { opacity: 0.4; }
+  .form button {
+    width: 100%;
+    padding: 12px 16px;
+    border-radius: 12px;
+    border: none;
+    background: #2563eb;
+    color: #fff;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .form button:hover:not(:disabled) { background: #3b82f6; }
+  .form button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* ─── Error ─── */
+  .error {
+    margin-top: 16px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(239,68,68,0.2);
+    background: rgba(239,68,68,0.08);
+    color: #f87171;
+    font-size: 0.8125rem;
+  }
+
+  /* ─── Progress ─── */
+  .progress { margin-top: 32px; }
+  .progress-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .progress-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .progress-dot.idle { background: #52525b; }
+  .progress-dot.streaming { background: #3b82f6; animation: pulse-ring 2s infinite; }
+  .progress-dot.complete { background: #22c55e; }
+  .progress-dot.error { background: #ef4444; }
+  @keyframes pulse-ring {
+    0% { box-shadow: 0 0 0 0 rgba(59,130,246,0.5); }
+    70% { box-shadow: 0 0 0 10px rgba(59,130,246,0); }
+    100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); }
+  }
+  .progress-label { font-size: 0.8125rem; color: #a1a1aa; }
+  .progress-shimmer {
+    flex: 1; height: 8px; border-radius: 4px;
+    background: linear-gradient(90deg, #27272a 25%, #3f3f46 50%, #27272a 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  .source-counter { margin-top: 8px; font-size: 0.75rem; color: #52525b; }
+
+  /* ─── Verdict Card ─── */
+  .verdict { margin-top: 32px; border-radius: 16px; border: 1px solid #27272a; background: rgba(24,24,27,0.8); overflow: hidden; }
+  .verdict-badge { padding: 20px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .verdict-badge .emoji { font-size: 1.5rem; }
+  .verdict-badge .label { margin-top: 4px; font-size: 1.25rem; font-weight: 700; color: #fff; }
+  .verdict-badge .confidence { text-align: right; }
+  .verdict-badge .confidence .pct { font-size: 2rem; font-weight: 700; color: rgba(255,255,255,0.9); }
+  .verdict-badge .confidence .sub { font-size: 0.6875rem; color: rgba(255,255,255,0.65); }
+  .verdict-explanation { padding: 16px 24px; font-size: 0.8125rem; color: #d4d4d8; line-height: 1.6; }
+  .verdict-bars { padding: 0 24px 16px; display: flex; flex-direction: column; gap: 6px; }
+  .verdict-bar-row { display: flex; align-items: center; gap: 8px; font-size: 0.6875rem; }
+  .verdict-bar-row .bar-name { width: 80px; color: #71717a; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+  .verdict-bar-row .bar-track { flex: 1; height: 8px; border-radius: 4px; background: #27272a; overflow: hidden; }
+  .verdict-bar-row .bar-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+  .verdict-bar-row .bar-pct { width: 36px; text-align: right; color: #52525b; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+
+  /* ─── Sources ─── */
+  .sources { border-top: 1px solid #27272a; padding: 12px 24px; }
+  .sources summary { font-size: 0.8125rem; color: #a1a1aa; cursor: pointer; user-select: none; }
+  .sources summary:hover { color: #e4e4e7; }
+  .source-list { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto; }
+  .source-item { padding: 8px 12px; border-radius: 8px; border: 1px solid #27272a; background: #09090b; font-size: 0.75rem; }
+  .source-item a { color: #60a5fa; text-decoration: none; font-weight: 500; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .source-item a:hover { text-decoration: underline; }
+  .source-item .meta { color: #52525b; margin-top: 2px; }
+  .source-item .class { margin-left: 6px; font-weight: 600; }
+  .source-item .class.SUPPORTS { color: #4ade80; }
+  .source-item .class.REFUTES { color: #f87171; }
+  .source-item .class.UNRELATED { color: #71717a; }
+
+  /* ─── Actions ─── */
+  .actions { border-top: 1px solid #27272a; padding: 12px 24px; display: flex; gap: 8px; }
+  .actions button {
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid #3f3f46;
+    background: transparent;
+    color: #a1a1aa;
+    font-size: 0.75rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .actions button:hover:not(:disabled) { color: #e4e4e7; border-color: #52525b; }
+  .actions button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* ─── Audit Trail ─── */
+  .audit { margin-top: 24px; border-radius: 16px; border: 1px solid #27272a; background: rgba(24,24,27,0.8); padding: 24px; }
+  .audit h3 { font-size: 0.9375rem; font-weight: 700; color: #e4e4e7; margin-bottom: 4px; }
+  .audit .audit-meta { font-size: 0.75rem; color: #71717a; margin-bottom: 20px; line-height: 1.8; }
+  .audit .audit-meta b { color: #a1a1aa; font-weight: 500; }
+
+  /* Stage card */
+  .stage-card { border: 1px solid #27272a; border-radius: 12px; background: #09090b; margin-bottom: 12px; overflow: hidden; }
+  .stage-card-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; cursor: pointer; user-select: none; }
+  .stage-card-header:hover { background: rgba(255,255,255,0.02); }
+  .stage-card-header .stage-icon { font-size: 1.25rem; width: 32px; flex-shrink: 0; }
+  .stage-card-header .stage-info { flex: 1; margin-left: 10px; }
+  .stage-card-header .stage-name { font-size: 0.8125rem; font-weight: 600; color: #d4d4d8; }
+  .stage-card-header .stage-model { font-size: 0.6875rem; color: #52525b; margin-top: 1px; }
+  .stage-card-header .stage-latency { font-size: 0.75rem; color: #71717a; font-family: monospace; }
+  .stage-card-header .stage-chevron { color: #52525b; transition: transform 0.2s; font-size: 0.75rem; }
+  .stage-card.open .stage-card-header .stage-chevron { transform: rotate(180deg); }
+  .stage-card-body { display: none; padding: 0 16px 14px; border-top: 1px solid #1c1c1f; }
+  .stage-card.open .stage-card-body { display: block; }
+
+  /* Snapshot sections */
+  .snapshot { margin-top: 12px; }
+  .snapshot-label { font-size: 0.6875rem; font-weight: 600; color: #71717a; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+  .snapshot pre { font-size: 0.6875rem; color: #a1a1aa; font-family: 'SF Mono','Cascadia Code',monospace; background: #121215; border-radius: 8px; padding: 10px 12px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow-y: auto; line-height: 1.6; }
+
+  /* Verdict inline badge */
+  .audit-verdict-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.6875rem; font-weight: 600; color: #fff; }
+
+  /* Classification row */
+  .audit-class-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 0.6875rem; border-bottom: 1px solid #1c1c1f; }
+  .audit-class-row:last-child { border-bottom: none; }
+  .audit-class-label { padding: 2px 6px; border-radius: 3px; font-weight: 600; font-size: 0.625rem; color: #fff; flex-shrink: 0; width: 72px; text-align: center; }
+  .audit-class-label.SUPPORTS { background: #16a34a; } .audit-class-label.REFUTES { background: #dc2626; } .audit-class-label.UNRELATED { background: #52525b; }
+  .audit-class-conf { color: #a1a1aa; width: 40px; text-align: center; flex-shrink: 0; }
+  .audit-class-rationale { color: #71717a; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Source link in audit */
+  .audit-source-link { color: #60a5fa; text-decoration: none; font-weight: 500; }
+  .audit-source-link:hover { text-decoration: underline; }
+  .audit-source-domain { color: #52525b; font-size: 0.625rem; margin-left: 6px; }
+
+  /* JSON key-value */
+  .json-kv { padding: 1px 0; font-size: 0.6875rem; }
+  .json-k { color: #71717a; }
+  .json-v { color: #a1a1aa; }
+  .json-v.str { color: #4ade80; }
+  .json-v.num { color: #60a5fa; }
+  .json-v.bool { color: #f59e0b; }
+
+  /* ─── Replay Comparison ─── */
+  .cmp { margin-top: 16px; border-radius: 16px; border: 1px solid #27272a; background: rgba(24,24,27,0.8); overflow: hidden; }
+  .cmp-header { padding: 14px 20px; text-align: center; font-size: 0.8125rem; font-weight: 600; }
+  .cmp-header.changed { background: rgba(250,204,21,0.12); color: #facc15; border-bottom: 1px solid rgba(250,204,21,0.15); }
+  .cmp-header.same { background: rgba(74,222,128,0.1); color: #4ade80; border-bottom: 1px solid rgba(74,222,128,0.12); }
+  .cmp-header.running { background: rgba(59,130,246,0.1); color: #60a5fa; border-bottom: 1px solid rgba(59,130,246,0.12); }
+  .cmp-body { display: flex; gap: 0; }
+  .cmp-side { flex: 1; padding: 16px 20px; }
+  .cmp-side:first-child { border-right: 1px solid #27272a; }
+  .cmp-side h4 { font-size: 0.6875rem; font-weight: 600; color: #71717a; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
+  .cmp-verdict { display: inline-block; padding: 4px 12px; border-radius: 6px; font-size: 0.9375rem; font-weight: 700; color: #fff; margin-bottom: 8px; }
+  .cmp-conf { font-size: 1.75rem; font-weight: 700; color: #e4e4e7; }
+  .cmp-conf-sub { font-size: 0.625rem; color: #71717a; }
+  .cmp-exp { font-size: 0.6875rem; color: #a1a1aa; line-height: 1.5; margin-top: 8px; }
+  .cmp-diff { margin-top: 12px; font-size: 0.625rem; color: #52525b; }
+  .cmp-diff span { font-weight: 600; }
+  .cmp-diff .up { color: #4ade80; }
+  .cmp-diff .down { color: #f87171; }
+  .cmp-link { display: block; margin-top: 10px; font-size: 0.6875rem; color: #60a5fa; text-decoration: none; }
+  .cmp-link:hover { text-decoration: underline; }
+
+  /* ─── Replay ─── */
+  .replay { margin-top: 16px; border-radius: 16px; border: 1px solid #27272a; background: rgba(24,24,27,0.8); padding: 24px; }
+  .replay h3 { font-size: 0.8125rem; font-weight: 600; color: #d4d4d8; margin-bottom: 8px; }
+  .replay pre { font-size: 0.6875rem; color: #71717a; font-family: 'SF Mono','Cascadia Code',monospace; white-space: pre-wrap; word-break: break-all; max-height: 320px; overflow-y: auto; }
+
+  /* Action buttons in audit */
+  .audit-actions { margin-top: 16px; display: flex; gap: 8px; }
+  .audit-actions button {
+    padding: 6px 12px; border-radius: 8px; border: 1px solid #3f3f46; background: transparent;
+    color: #a1a1aa; font-size: 0.75rem; font-family: inherit; cursor: pointer; transition: all 0.15s;
+  }
+  .audit-actions button:hover { color: #e4e4e7; border-color: #52525b; }
+
+  /* ─── Footer ─── */
+  .footer { text-align: center; margin-top: 48px; font-size: 0.6875rem; color: #3f3f46; }
+
+  /* ─── Verdict color map ─── */
+  .bg-TRUE { background: #16a34a; } .bg-MOSTLY_TRUE { background: #22c55e; }
+  .bg-HALF_TRUE { background: #eab308; } .bg-MOSTLY_FALSE { background: #f97316; }
+  .bg-FALSE { background: #dc2626; } .bg-PANTS_ON_FIRE { background: #991b1b; }
+  .bg-UNVERIFIABLE { background: #71717a; }
+  .fill-TRUE { background: #16a34a !important; } .fill-MOSTLY_TRUE { background: #22c55e !important; }
+  .fill-HALF_TRUE { background: #eab308 !important; } .fill-MOSTLY_FALSE { background: #f97316 !important; }
+  .fill-FALSE { background: #dc2626 !important; } .fill-PANTS_ON_FIRE { background: #991b1b !important; }
+  .fill-UNVERIFIABLE { background: #71717a !important; }
+
+  /* ─── Scrollbar ─── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- Header -->
+  <header class="header">
+    <h1>Piste</h1>
+    <p id="tagline">AI Fact-Checking Pipeline</p>
+    <div style="margin-top:10px">
+      <button id="langEn" class="lang-btn active" onclick="setLocale('en')">EN</button>
+      <button id="langFr" class="lang-btn" onclick="setLocale('fr')">FR</button>
+    </div>
+  </header>
+
+  <!-- Claim Form -->
+  <form class="form" id="claimForm">
+    <textarea id="claimText" rows="3" placeholder="Enter a claim to fact-check…" maxlength="10000"></textarea>
+    <input type="text" id="claimContext" placeholder="Optional context…">
+    <button type="submit" id="submitBtn">Fact-Check Claim</button>
+  </form>
+
+  <!-- Error -->
+  <div class="error" id="errorBox" style="display:none"></div>
+
+  <!-- Progress -->
+  <div class="progress" id="progressBox" style="display:none">
+    <div class="progress-bar">
+      <div class="progress-dot idle" id="progressDot"></div>
+      <span class="progress-label" id="progressLabel">Initializing…</span>
+      <div class="progress-shimmer" id="progressShimmer" style="display:none"></div>
+    </div>
+    <div class="source-counter" id="sourceCounter" style="display:none"></div>
+  </div>
+
+  <!-- Verdict Card -->
+  <div class="verdict" id="verdictCard" style="display:none">
+    <div class="verdict-badge" id="verdictBadge"></div>
+    <div class="verdict-explanation" id="verdictExplanation"></div>
+    <div class="verdict-bars" id="verdictBars"></div>
+    <div class="sources" id="sourcesBox" style="display:none">
+      <details id="sourcesDetails">
+        <summary id="sourcesSummary">0 sources · 0 classifications</summary>
+        <div class="source-list" id="sourceList"></div>
+      </details>
+    </div>
+    <div class="actions">
+      <button id="auditBtn">Audit Trail</button>
+      <button id="replayBtn">Replay</button>
+    </div>
+  </div>
+
+  <!-- Audit Trail -->
+  <div class="audit" id="auditBox" style="display:none"></div>
+
+  <!-- Replay Result -->
+  <div class="replay" id="replayBox" style="display:none"></div>
+
+  <!-- Footer -->
+  <p class="footer" id="footerText">Piste</p>
+  <p class="footer" style="font-size:0.625rem;color:#3f3f46;margin-top:4px">© 2026 Jinan Kordab</p>
+</div>
+
+<script>
+/* ───────────────────────────────────────────────
+   Piste — Frontend (Vanilla JS)
+   ─────────────────────────────────────────────── */
+
+const API = 'http://localhost:8000';
+
+/* ─── State ─── */
+let state = {
+  runId: null,
+  stage: 'idle',
+  sources: [],
+  classifications: [],
+  verdict: null,
+  locale: 'en',
+};
+
+/* ─── DOM refs ─── */
+const $ = (sel) => document.querySelector(sel);
+const form = $('#claimForm');
+const claimText = $('#claimText');
+const claimContext = $('#claimContext');
+const submitBtn = $('#submitBtn');
+const errorBox = $('#errorBox');
+const progressBox = $('#progressBox');
+const progressDot = $('#progressDot');
+const progressLabel = $('#progressLabel');
+const progressShimmer = $('#progressShimmer');
+const sourceCounter = $('#sourceCounter');
+const verdictCard = $('#verdictCard');
+const verdictBadge = $('#verdictBadge');
+const verdictExplanation = $('#verdictExplanation');
+const verdictBars = $('#verdictBars');
+const sourcesBox = $('#sourcesBox');
+const sourcesDetails = $('#sourcesDetails');
+const sourcesSummary = $('#sourcesSummary');
+const sourceList = $('#sourceList');
+const auditBtn = $('#auditBtn');
+const replayBtn = $('#replayBtn');
+const auditBox = $('#auditBox');
+const replayBox = $('#replayBox');
+
+/* ─── Verdict config ─── */
+const VD = {
+  TRUE:        { emoji: '✅', label: 'True',           labelFr: 'Vrai',           cls: 'bg-TRUE' },
+  MOSTLY_TRUE:  { emoji: '👍', label: 'Mostly True',    labelFr: 'Plutôt vrai',   cls: 'bg-MOSTLY_TRUE' },
+  HALF_TRUE:   { emoji: '🤔', label: 'Half True',      labelFr: 'Mi-vrai',       cls: 'bg-HALF_TRUE' },
+  MOSTLY_FALSE: { emoji: '⚠️', label: 'Mostly False',   labelFr: 'Plutôt faux',   cls: 'bg-MOSTLY_FALSE' },
+  FALSE:       { emoji: '❌', label: 'False',           labelFr: 'Faux',          cls: 'bg-FALSE' },
+  PANTS_ON_FIRE:{ emoji: '🔥', label: 'Pants on Fire',  labelFr: 'Faux absolu',   cls: 'bg-PANTS_ON_FIRE' },
+  UNVERIFIABLE: { emoji: '❓', label: 'Unverifiable',    labelFr: 'Invérifiable',  cls: 'bg-UNVERIFIABLE' },
+};
+
+function vdLabel(key) {
+  const cfg = VD[key] || VD.UNVERIFIABLE;
+  return state.locale === 'fr' ? cfg.labelFr : cfg.label;
+}
+
+/* ─── Translations ─── */
+const T = {
+  en: {
+    tagline: 'AI Fact-Checking Pipeline',
+    submit: 'Fact-Check Claim',
+    running: 'Running…',
+    submitting: 'Submitting…',
+    connecting: 'Connecting…',
+    pipelineStarted: 'Pipeline started',
+    pipelineStarting: 'Pipeline starting…',
+    stage1a: 'Stage 1a: Check-worthiness…',
+    stage1aDone: 'Check-worthiness done',
+    stage1b: 'Stage 1b: Atomic decomposition…',
+    stage1bDone: 'Decomposition done',
+    stage2a: 'Stage 2a: Search decision…',
+    stage2b: 'Stage 2b: Web retrieval…',
+    stage2cDone: 'Retrieval complete',
+    stage2Done: 'Stage 2 complete',
+    stage3: 'Stage 3: Classification…',
+    stage3Done: 'Classification done',
+    stage4a: 'Stage 4: Aggregation…',
+    criticalityDone: 'Criticality determined',
+    verdictReady: 'Verdict ready',
+    confidence: 'confidence',
+    sourcesRetrieved: '{n} source{s} retrieved · {c} classified',
+    auditTitle: '🔍 Full Forensic Audit Trail',
+    auditPipeline: 'Pipeline',
+    auditStatus: 'Status',
+    auditStarted: 'Started',
+    auditCompleted: 'Completed',
+    auditStages: 'Pipeline Stages ({n})',
+    auditStageInput: '📥 Input',
+    auditStageOutput: '📤 Output',
+    auditSources: 'Evidence Sources ({n})',
+    auditClassifications: 'Per-Source Classifications ({n})',
+    auditSourceCredibility: 'credibility',
+    auditViewTrail: 'View audit trail →',
+    auditBtn: 'Audit Trail',
+    auditLoading: 'Loading…',
+    replayBtn: 'Replay',
+    replayRunning: 'Running…',
+    replayTitle: 'Replay Result',
+    replayInProgress: '🔄 Replay in progress — pipeline running…',
+    replayWaiting: 'Waiting for pipeline…',
+    replayChanged: '⚠️ Verdict Changed: {o} → {n}',
+    replayUnchanged: '✅ Verdict Unchanged: {v}',
+    replayOriginal: '📋 Original Run',
+    replayReplay: '🔄 Replay Run',
+    replayConfidenceShift: 'Confidence shift',
+    cmpAggregated: 'Aggregated from {n} atomic claims',
+    cmpAtomicClaim: 'Atomic claim {i}: {v} ({p}%)',
+    cmpOverall: 'Overall verdict: {v}',
+    footer: 'Piste',
+    errorPipeline: 'Pipeline encountered an error',
+    errorConnection: 'Connection lost',
+    errorNoRunId: 'No run_id returned from server',
+    errorSubmission: 'Submission failed',
+    sourceCounter: '{n} source{s} retrieved · {c} classified',
+    init: 'Initializing…',
+    decisionSearchNeeded: 'Search needed',
+    decisionNoSearch: 'No search needed',
+    decisionQueries: 'Queries',
+  },
+  fr: {
+    tagline: 'Pipeline de vérification des faits',
+    submit: 'Vérifier',
+    running: 'En cours…',
+    submitting: 'Envoi…',
+    connecting: 'Connexion…',
+    pipelineStarted: 'Pipeline démarré',
+    pipelineStarting: 'Démarrage du pipeline…',
+    stage1a: 'Étape 1a : Vérifiabilité…',
+    stage1aDone: 'Vérifiabilité terminée',
+    stage1b: 'Étape 1b : Décomposition atomique…',
+    stage1bDone: 'Décomposition terminée',
+    stage2a: 'Étape 2a : Décision de recherche…',
+    stage2b: 'Étape 2b : Recherche web…',
+    stage2cDone: 'Recherche terminée',
+    stage2Done: 'Étape 2 terminée',
+    stage3: 'Étape 3 : Classification…',
+    stage3Done: 'Classification terminée',
+    stage4a: 'Étape 4 : Agrégation…',
+    criticalityDone: 'Criticité déterminée',
+    verdictReady: 'Verdict prêt',
+    confidence: 'confiance',
+    sourcesRetrieved: '{n} source{s} récupérée{s} · {c} classifiée{s}',
+    auditTitle: '🔍 Piste d\'audit judiciaire complète',
+    auditPipeline: 'Pipeline',
+    auditStatus: 'Statut',
+    auditStarted: 'Démarré',
+    auditCompleted: 'Terminé',
+    auditStages: 'Étapes du pipeline ({n})',
+    auditStageInput: '📥 Entrée',
+    auditStageOutput: '📤 Sortie',
+    auditSources: 'Sources de preuves ({n})',
+    auditClassifications: 'Classifications par source ({n})',
+    auditSourceCredibility: 'crédibilité',
+    auditViewTrail: 'Voir la piste d\'audit →',
+    auditBtn: 'Piste d\'audit',
+    auditLoading: 'Chargement…',
+    replayBtn: 'Rejouer',
+    replayRunning: 'En cours…',
+    replayTitle: 'Résultat de la reprise',
+    replayInProgress: '🔄 Reprise en cours — pipeline en exécution…',
+    replayWaiting: 'En attente du pipeline…',
+    replayChanged: '⚠️ Verdict modifié : {o} → {n}',
+    replayUnchanged: '✅ Verdict inchangé : {v}',
+    replayOriginal: '📋 Exécution originale',
+    replayReplay: '🔄 Nouvelle exécution',
+    replayConfidenceShift: 'Changement de confiance',
+    cmpAggregated: 'Agrégé à partir de {n} affirmations atomiques',
+    cmpAtomicClaim: 'Affirmation atomique {i} : {v} ({p}%)',
+    cmpOverall: 'Verdict global : {v}',
+    footer: 'Piste',
+    errorPipeline: 'Le pipeline a rencontré une erreur',
+    errorConnection: 'Connexion perdue',
+    errorNoRunId: 'Aucun run_id retourné par le serveur',
+    errorSubmission: 'Échec de la soumission',
+    sourceCounter: '{n} source{s} récupérée{s} · {c} classifiée{s}',
+    init: 'Initialisation…',
+    decisionSearchNeeded: 'Recherche nécessaire',
+    decisionNoSearch: 'Aucune recherche nécessaire',
+    decisionQueries: 'Requêtes',
+  }
+};
+
+function t(key, params) {
+  const lang = T[state.locale] || T['en'];
+  let str = lang[key] || T['en'][key] || key;
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      str = str.replace('{'+k+'}', v);
+    }
+  }
+  return str;
+}
+
+/* ─── Helpers ─── */
+function show(el) { el.style.display = ''; }
+function hide(el) { el.style.display = 'none'; }
+function setBusy(b) {
+  [claimText, claimContext, submitBtn].forEach(el => {
+    if (el.tagName === 'BUTTON') el.disabled = b;
+    else el.disabled = b;
+  });
+  submitBtn.textContent = b ? t('running') : t('submit');
+}
+function setStage(s) {
+  state.stage = s;
+  progressDot.className = 'progress-dot ' + s;
+  if (s === 'streaming') show(progressShimmer);
+  else hide(progressShimmer);
+}
+function showError(msg) {
+  errorBox.textContent = msg;
+  show(errorBox);
+}
+function hideError() { hide(errorBox); }
+
+/* ─── SSE Stream ─── */
+let es = null;
+function disconnectSSE() {
+  if (es) { es.close(); es = null; }
+}
+
+function connectSSE(runId) {
+  disconnectSSE();
+  state.runId = runId;
+  state.sources = [];
+  state.classifications = [];
+  state.verdict = null;
+  hideError();
+  hide(verdictCard);
+  hide(auditBox);
+  hide(replayBox);
+  show(progressBox);
+  hide(sourceCounter);
+  sourceList.innerHTML = '';
+  verdictBars.innerHTML = '';
+
+  setStage('connecting');
+  progressLabel.textContent = t('connecting');
+
+  es = new EventSource(API + '/api/v1/claims/' + runId + '/stream');
+
+  es.onopen = () => {
+    setStage('streaming');
+    progressLabel.textContent = t('pipelineStarted');
+  };
+
+  const on = (evt, handler) => es.addEventListener(evt, handler);
+
+  on('pipeline_start',          () => { progressLabel.textContent = t('pipelineStarting'); });
+  on('stage_1a_start',          () => { progressLabel.textContent = t('stage1a'); });
+  on('stage_1a_complete',       () => { progressLabel.textContent = t('stage1aDone'); });
+  on('stage_1b_start',          () => { progressLabel.textContent = t('stage1b'); });
+  on('stage_1b_complete',       () => { progressLabel.textContent = t('stage1bDone'); });
+  on('stage_2a_start',          () => { progressLabel.textContent = t('stage2a'); });
+  on('stage_2b_start',          () => { progressLabel.textContent = t('stage2b'); });
+  on('stage_2c_complete',       () => { progressLabel.textContent = t('stage2cDone'); });
+  on('stage_2_complete',        () => { progressLabel.textContent = t('stage2Done'); });
+  on('stage_3_start',           () => { progressLabel.textContent = t('stage3'); });
+  on('stage_3_complete',        () => { progressLabel.textContent = t('stage3Done'); });
+  on('stage_4a_start',          () => { progressLabel.textContent = t('stage4a'); });
+  on('criticality_determined',  () => { progressLabel.textContent = t('criticalityDone'); });
+
+  on('source_retrieved', (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      state.sources.push({ url: d.url, domain: d.domain, title: d.title, credibility: d.credibility_score ?? 0 });
+      updateSourceCounter();
+    } catch(_) {}
+  });
+
+  on('source_classified', (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      state.classifications.push({ label: d.label, confidence: d.confidence, rationale: d.rationale });
+      updateSourceCounter();
+    } catch(_) {}
+  });
+
+  on('verdict_complete', (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      state.verdict = {
+        verdict: d.verdict,
+        confidence: d.confidence,
+        explanation: d.explanation,
+        distribution: d.distribution,
+      };
+      setStage('complete');
+      progressLabel.textContent = t('verdictReady');
+      renderVerdict();
+      es.close();
+    } catch(_) {}
+  });
+
+  on('pipeline_error', () => {
+    setStage('error');
+    showError(t('errorPipeline'));
+    disconnectSSE();
+    setBusy(false);
+  });
+
+  es.onerror = () => {
+    if (es.readyState === EventSource.CLOSED && state.stage !== 'complete') {
+      setStage('error');
+      showError(t('errorConnection'));
+      setBusy(false);
+    }
+  };
+}
+
+function updateSourceCounter() {
+  if (state.sources.length > 0 || state.classifications.length > 0) {
+    show(sourceCounter);
+    sourceCounter.textContent = t('sourceCounter', { n: state.sources.length, s: state.sources.length !== 1 ? 's' : '', c: state.classifications.length });
+  }
+}
+
+/* ─── Submit ─── */
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = claimText.value.trim();
+  if (!text) return;
+
+  setBusy(true);
+  hideError();
+  hide(verdictCard);
+  hide(auditBox);
+  hide(replayBox);
+
+  try {
+    const res = await fetch(API + '/api/v1/claims', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        claim_text: text,
+        locale: state.locale,
+        context: claimContext.value.trim(),
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || t('errorSubmission') + ' (' + res.status + ')');
+    }
+
+    const data = await res.json();
+    if (data.run_id) {
+      state.runId = data.run_id;
+      connectSSE(data.run_id);
+    } else {
+      throw new Error(t('errorNoRunId'));
+    }
+  } catch (err) {
+    setStage('error');
+    showError(err.message);
+    setBusy(false);
+  }
+});
+
+/* ─── Render Verdict ─── */
+function renderVerdict() {
+  const v = state.verdict;
+  if (!v) return;
+
+  const cfg = VD[v.verdict] || VD.UNVERIFIABLE;
+
+  verdictBadge.className = 'verdict-badge ' + cfg.cls;
+  verdictBadge.innerHTML = `
+    <div>
+      <div class="emoji">${cfg.emoji}</div>
+      <div class="label">${vdLabel(v.verdict)}</div>
+    </div>
+    <div class="confidence">
+      <div class="pct">${(v.confidence * 100).toFixed(0)}%</div>
+      <div class="sub" id="confLabel">confidence</div>
+    </div>`;
+
+  verdictExplanation.textContent = v.explanation;
+  // Update confidence label
+  const cl = document.getElementById('confLabel'); if (cl) cl.textContent = t('confidence');
+
+  // Distribution bars
+  verdictBars.innerHTML = '';
+  const entries = Object.entries(v.distribution || {})
+    .sort((a, b) => b[1] - a[1]);
+  for (const [label, score] of entries) {
+    const dc = VD[label] || { label, cls: 'fill-UNVERIFIABLE' };
+    const row = document.createElement('div');
+    row.className = 'verdict-bar-row';
+    row.innerHTML = `
+      <span class="bar-name">${vdLabel(label)}</span>
+      <div class="bar-track"><div class="bar-fill ${dc.cls}" style="width:${(score * 100).toFixed(0)}%"></div></div>
+      <span class="bar-pct">${(score * 100).toFixed(0)}%</span>`;
+    verdictBars.appendChild(row);
+  }
+
+  // Sources
+  if (state.sources.length > 0) {
+    show(sourcesBox);
+    sourcesSummary.textContent = state.sources.length + ' source' + (state.sources.length !== 1 ? 's' : '') +
+      ' · ' + state.classifications.length + ' classification' + (state.classifications.length !== 1 ? 's' : '');
+    sourceList.innerHTML = '';
+    for (let i = 0; i < state.sources.length; i++) {
+      const s = state.sources[i];
+      const c = state.classifications[i];
+      const div = document.createElement('div');
+      div.className = 'source-item';
+      div.innerHTML = `
+        <a href="${escHtml(s.url)}" target="_blank" rel="noopener noreferrer">${escHtml(s.title || s.url)}</a>
+        <span class="meta">${escHtml(s.domain)} · ${t('auditSourceCredibility')} ${(s.credibility * 100).toFixed(0)}%</span>
+        ${c ? `<span class="class ${escHtml(c.label)}">${escHtml(c.label)}</span>` : ''}`;
+      sourceList.appendChild(div);
+    }
+  } else {
+    hide(sourcesBox);
+  }
+
+  show(verdictCard);
+  setBusy(false);
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ─── Language toggle ─── */
+function setLocale(loc) {
+  state.locale = loc;
+  document.getElementById('langEn').classList.toggle('active', loc === 'en');
+  document.getElementById('langFr').classList.toggle('active', loc === 'fr');
+  claimText.placeholder = loc === 'fr'
+    ? 'Entrez une affirmation à vérifier…'
+    : 'Enter a claim to fact-check…';
+  claimContext.placeholder = loc === 'fr' ? 'Contexte optionnel…' : 'Optional context…';
+  submitBtn.textContent = t('submit');
+  document.getElementById('tagline').textContent = t('tagline');
+  document.getElementById('footerText').textContent = t('footer');
+  // Update confidence label if verdict is showing
+  const cl = document.getElementById('confLabel'); if (cl) cl.textContent = t('confidence');
+  // Update audit button
+  auditBtn.textContent = t('auditBtn');
+  replayBtn.textContent = t('replayBtn');
+}
+
+/* ─── Audit Trail ─── */
+auditBtn.addEventListener('click', async () => {
+  if (!state.runId) return;
+  auditBtn.disabled = true;
+  auditBtn.textContent = 'Loading…';
+  try {
+    const res = await fetch(API + '/api/v1/audit/' + state.runId);
+    if (!res.ok) throw new Error('Not found');
+    const audit = await res.json();
+    renderAudit(audit);
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    auditBtn.disabled = false;
+    auditBtn.textContent = 'Audit Trail';
+  }
+});
+
+function renderAudit(audit) {
+  const v = audit.verdict;
+  const vcfg = v ? (VD[v.verdict] || VD.UNVERIFIABLE) : null;
+
+  let html = '<h3>' + t('auditTitle') + '</h3>';
+  html += '<div class="audit-meta">';
+  html += `<b>Run ID</b> ${escHtml(audit.runId)}<br>`;
+  html += `<b>${t('auditPipeline')}</b> ${escHtml(audit.pipelineVersion || '—')} · <b>${t('auditStatus')}</b> ${escHtml(audit.status || '—')}<br>`;
+  if (audit.startedAt) html += `<b>${t('auditStarted')}</b> ${new Date(audit.startedAt).toLocaleString()}<br>`;
+  if (audit.completedAt) html += `<b>${t('auditCompleted')}</b> ${new Date(audit.completedAt).toLocaleString()}<br>`;
+  html += '</div>';
+
+  // ─── Final Verdict Summary ───
+  if (v) {
+    html += '<div style="margin-bottom:16px;padding:14px 16px;border-radius:10px;'+vcfg.cls.replace('bg-','background:')+';color:#fff">';
+    html += `<div style="font-size:1.5rem">${vcfg.emoji}</div>`;
+    html += `<div style="font-size:1.1rem;font-weight:700;margin-top:4px">${vdLabel(v.verdict)} · ${(v.confidence*100).toFixed(0)}% ${t('confidence')}</div>`;
+    html += `<div style="font-size:0.75rem;margin-top:6px;opacity:0.9;line-height:1.5">${escHtml(v.explanation || '')}</div>`;
+    html += '</div>';
+  }
+
+  // ─── Pipeline Stages ───
+  if (audit.stages && audit.stages.length > 0) {
+    html += '<h4 style="font-size:0.8125rem;color:#a1a1aa;margin:16px 0 8px">' + t('auditStages', {n: audit.stages.length}) + '</h4>';
+
+    const stageIcons = {
+      stage_1a: '🔬', stage_1b: '🧩',
+      stage_2a: '🔎', stage_2b: '🌐', stage_2c: '📡',
+      stage_3: '🤖',
+      stage_4a: '⚖️', stage_4b: '📊', stage_4c: '🚨',
+    };
+    const stageLabelsEn = {
+      stage_1a: 'Check-Worthiness Detection',
+      stage_1b: 'Atomic Claim Decomposition',
+      stage_2a: 'Search Decision',
+      stage_2b: 'Blind Web Retrieval',
+      stage_2c: 'Canonical Mapping',
+      stage_3: 'Per-Source Classification',
+      stage_4a: 'Verdict Aggregation',
+      stage_4b: 'Automated Verdict',
+      stage_4c: 'Criticality Gate',
+    };
+    const stageLabelsFr = {
+      stage_1a: 'Détection de vérifiabilité',
+      stage_1b: 'Décomposition atomique',
+      stage_2a: 'Décision de recherche',
+      stage_2b: 'Recherche web aveugle',
+      stage_2c: 'Cartographie canonique',
+      stage_3: 'Classification par source',
+      stage_4a: 'Agrégation du verdict',
+      stage_4b: 'Verdict automatisé',
+      stage_4c: 'Porte de criticité',
+    };
+    const stageLabels = state.locale === 'fr' ? stageLabelsFr : stageLabelsEn;
+
+    for (let i = 0; i < audit.stages.length; i++) {
+      const s = audit.stages[i];
+      const icon = stageIcons[s.stageName] || '📋';
+      const label = stageLabels[s.stageName] || s.stageName;
+      const sid = 'stage-' + i;
+
+      html += `<div class="stage-card" id="${sid}">`;
+      html += `<div class="stage-card-header" onclick="document.getElementById('${sid}').classList.toggle('open')">`;
+      html += `<span class="stage-icon">${icon}</span>`;
+      html += `<div class="stage-info"><div class="stage-name">${escHtml(label)}</div>`;
+      if (s.modelUsed) html += `<div class="stage-model">${escHtml(s.modelUsed)}</div>`;
+      html += `</div>`;
+      html += `<span class="stage-latency">${s.latencyMs ? (s.latencyMs < 1000 ? s.latencyMs.toFixed(0)+'ms' : (s.latencyMs/1000).toFixed(1)+'s') : '—'}</span>`;
+      html += `<span class="stage-chevron">▾</span>`;
+      html += `</div>`;
+
+      // Body — input/output snapshots
+      html += '<div class="stage-card-body">';
+
+      // Input snapshot
+      if (s.inputSnapshot && Object.keys(s.inputSnapshot).length > 0) {
+        html += '<div class="snapshot"><div class="snapshot-label">' + t('auditStageInput') + '</div>';
+        html += renderSnapshot(s.inputSnapshot, s.stageName);
+        html += '</div>';
+      }
+
+      // Output snapshot
+      if (s.outputSnapshot && Object.keys(s.outputSnapshot).length > 0) {
+        html += '<div class="snapshot"><div class="snapshot-label">' + t('auditStageOutput') + '</div>';
+        html += renderSnapshot(s.outputSnapshot, s.stageName);
+        html += '</div>';
+      }
+
+      html += '</div></div>';
+    }
+  }
+
+  // ─── Sources ───
+  if (audit.sources && audit.sources.length > 0) {
+    html += '<h4 style="font-size:0.8125rem;color:#a1a1aa;margin:16px 0 8px">' + t('auditSources', {n: audit.sources.length}) + '</h4>';
+    html += '<div style="display:flex;flex-direction:column;gap:6px">';
+    for (const src of audit.sources) {
+      html += '<div style="padding:8px 12px;border-radius:8px;border:1px solid #27272a;background:#09090b;font-size:0.75rem">';
+      html += `<a class="audit-source-link" href="${escHtml(src.url)}" target="_blank" rel="noopener">${escHtml(src.title || src.url)}</a>`;
+      html += `<span class="audit-source-domain">${escHtml(src.domain)} · ${t('auditSourceCredibility')} ${((src.credibilityScore||0)*100).toFixed(0)}%</span>`;
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  // ─── Classifications ───
+  if (audit.classifications && audit.classifications.length > 0) {
+    html += '<h4 style="font-size:0.8125rem;color:#a1a1aa;margin:16px 0 8px">' + t('auditClassifications', {n: audit.classifications.length}) + '</h4>';
+    html += '<div style="border:1px solid #27272a;border-radius:10px;overflow:hidden">';
+    for (const c of audit.classifications) {
+      html += '<div class="audit-class-row">';
+      html += `<span class="audit-class-label ${escHtml(c.label)}">${escHtml(c.label)}</span>`;
+      html += `<span class="audit-class-conf">${((c.confidence||0)*100).toFixed(0)}%</span>`;
+      html += `<span class="audit-class-rationale" title="${escHtml(c.rationale||'')}">${escHtml((c.rationale||'').slice(0,120))}${(c.rationale||'').length>120?'…':''}</span>`;
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  auditBox.innerHTML = html;
+  show(auditBox);
+  auditBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* ─── Snapshot renderer ─── */
+function renderSnapshot(obj, stageName) {
+  // Special handling for certain stages
+  if (stageName === 'stage_1b' && obj.atomic_claims) {
+    let h = '<div style="font-size:0.75rem;color:#a1a1aa;line-height:1.8">';
+    const claims = Array.isArray(obj.atomic_claims) ? obj.atomic_claims : [obj.atomic_claims];
+    claims.forEach((ac, i) => {
+      h += `<div style="padding:6px 10px;margin:4px 0;border-left:3px solid #3b82f6;background:#121215;border-radius:0 6px 6px 0">🧩 <b>Claim ${i+1}:</b> ${escHtml(String(ac))}</div>`;
+    });
+    h += '</div>';
+    return h;
+  }
+
+  if ((stageName === 'stage_4b' || stageName === 'stage_4a') && obj.verdict) {
+    const cfg = VD[obj.verdict] || VD.UNVERIFIABLE;
+    let h = `<div class="audit-verdict-badge ${cfg.cls}" style="margin-bottom:8px">${cfg.emoji} ${vdLabel(obj.verdict)}</div>`;
+    if (obj.confidence) h += ` <span style="font-size:0.75rem;color:#a1a1aa;margin-left:6px">${(obj.confidence*100).toFixed(0)}% confidence</span>`;
+    if (obj.distribution) {
+      h += '<div style="margin-top:8px;display:flex;flex-direction:column;gap:3px">';
+      for (const [k,v] of Object.entries(obj.distribution).sort((a,b)=>b[1]-a[1])) {
+        const dc = VD[k] || { label: k, cls: 'fill-UNVERIFIABLE' };
+        h += `<div style="display:flex;align-items:center;gap:6px;font-size:0.625rem"><span style="width:70px;text-align:right;color:#71717a">${vdLabel(k)}</span><div style="flex:1;height:6px;border-radius:3px;background:#27272a"><div style="height:100%;border-radius:3px;width:${(v*100).toFixed(0)}%;${dc.cls.replace('fill-','background:')}"></div></div><span style="width:32px;text-align:right;color:#52525b">${(v*100).toFixed(0)}%</span></div>`;
+      }
+      h += '</div>';
+    }
+    return h;
+  }
+
+  if (stageName === 'stage_2b' && (obj.sources || obj.results)) {
+    const srcs = obj.sources || obj.results || [];
+    if (Array.isArray(srcs)) {
+      let h = `<div style="font-size:0.6875rem;color:#a1a1aa">${srcs.length} sources retrieved</div>`;
+      srcs.slice(0,10).forEach(s => {
+        if (typeof s === 'object') {
+          h += `<div style="margin:4px 0;padding:4px 8px;background:#121215;border-radius:4px"><a class="audit-source-link" href="${escHtml(s.url||'')}" target="_blank">${escHtml((s.title||s.url||'').slice(0,80))}</a><span class="audit-source-domain">${escHtml(s.domain||'')}</span></div>`;
+        }
+      });
+      if (srcs.length > 10) h += `<div style="font-size:0.625rem;color:#52525b">+ ${srcs.length-10} more</div>`;
+      return h;
+    }
+  }
+
+  if (stageName === 'stage_2a' && obj.search_queries) {
+    let h = '<div style="font-size:0.75rem">';
+    h += `<div style="margin-bottom:6px"><span style="color:#71717a">${t('decisionSearchNeeded')}:</span> <span style="color:${obj.needs_search?'#4ade80':'#f87171'}">${obj.needs_search ? t('decisionSearchNeeded') : t('decisionNoSearch')}</span></div>`;
+    if (obj.reasoning) h += `<div style="color:#71717a;margin-bottom:6px;line-height:1.5">${escHtml(String(obj.reasoning).slice(0,300))}</div>`;
+    if (Array.isArray(obj.search_queries)) {
+      h += '<div style="color:#71717a;margin-bottom:2px">' + t('decisionQueries') + ':</div>';
+      obj.search_queries.forEach(q => { h += `<div style="padding:3px 8px;margin:2px 0;background:#121215;border-radius:4px;color:#a1a1aa;font-family:monospace;font-size:0.6875rem">🔎 ${escHtml(String(q))}</div>`; });
+    }
+    h += '</div>';
+    return h;
+  }
+
+  // Default: pretty JSON
+  return '<pre>' + escHtml(JSON.stringify(obj, null, 2)) + '</pre>';
+}
+
+/* ─── Replay ─── */
+let replayData = null; // { original: {...}, replay: {...} }
+
+replayBtn.addEventListener('click', async () => {
+  if (!state.runId) return;
+  replayBtn.disabled = true;
+  replayBtn.textContent = t('replayRunning');
+  hide(replayBox);
+  hide(errorBox);
+
+  try {
+    const res = await fetch(API + '/api/v1/replay/' + state.runId);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Replay failed (' + res.status + ')');
+    }
+    const data = await res.json();
+    replayData = data;
+
+    // Show "running" comparison immediately with original data
+    renderComparison(null);
+    show(replayBox);
+    replayBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Subscribe to the new run's SSE stream
+    if (data.replay && data.replay.runId) {
+      const es = new EventSource(API + '/api/v1/claims/' + data.replay.runId + '/stream');
+      es.addEventListener('verdict_complete', (e) => {
+        try {
+          const v = JSON.parse(e.data);
+          renderComparison({
+            verdict: v.verdict,
+            confidence: v.confidence,
+            explanation: v.explanation,
+            distribution: v.distribution,
+          });
+          es.close();
+          replayBtn.disabled = false;
+          replayBtn.textContent = 'Replay';
+        } catch(_) {}
+      });
+      es.addEventListener('pipeline_error', () => {
+        renderComparison({ error: 'Pipeline failed' });
+        es.close();
+        replayBtn.disabled = false;
+        replayBtn.textContent = 'Replay';
+      });
+      es.onerror = () => {
+        if (es.readyState === EventSource.CLOSED) {
+          replayBtn.disabled = false;
+          replayBtn.textContent = 'Replay';
+        }
+      };
+      // Safety: re-enable after 90s
+      setTimeout(() => { replayBtn.disabled = false; replayBtn.textContent = t('replayBtn'); }, 90000);
+    } else {
+      replayBtn.disabled = false;
+      replayBtn.textContent = 'Replay';
+    }
+  } catch (err) {
+    showError(err.message);
+    replayBtn.disabled = false;
+    replayBtn.textContent = 'Replay';
+  }
+});
+
+function renderComparison(newVerdict) {
+  if (!replayData) return;
+  const orig = replayData.original || {};
+  const replay = replayData.replay || {};
+
+  const origCfg = VD[orig.verdict] || VD.UNVERIFIABLE;
+  const newCfg = newVerdict ? (VD[newVerdict.verdict] || VD.UNVERIFIABLE) : null;
+
+  const changed = newVerdict && orig.verdict !== newVerdict.verdict;
+  const running = !newVerdict;
+
+  let html = '';
+
+  // Header banner
+  if (running) {
+    html += '<div class="cmp-header running">' + t('replayInProgress') + '</div>';
+  } else if (changed) {
+    html += `<div class="cmp-header changed">` + t('replayChanged', {o: vdLabel(orig.verdict), n: vdLabel(newVerdict.verdict)}) + `</div>`;
+  } else {
+    html += `<div class="cmp-header same">` + t('replayUnchanged', {v: vdLabel(orig.verdict)}) + `</div>`;
+  }
+
+  html += '<div class="cmp-body">';
+
+  // Original side
+  html += '<div class="cmp-side">';
+  html += '<h4>' + t('replayOriginal') + '</h4>';
+  html += `<div class="cmp-verdict ${origCfg.cls}">${origCfg.emoji} ${vdLabel(orig.verdict)}</div>`;
+  html += `<div class="cmp-conf">${((orig.confidence || 0) * 100).toFixed(0)}%</div>`;
+  html += '<div class="cmp-conf-sub">' + t('confidence') + '</div>';
+  if (orig.explanation) {
+    html += `<div class="cmp-exp">${escHtml(orig.explanation)}</div>`;
+  }
+  html += `<a class="cmp-link" href="#" onclick="event.preventDefault();loadAuditById('${orig.runId || state.runId}')">${t('auditViewTrail')}</a>`;
+  html += '</div>';
+
+  // New side
+  html += '<div class="cmp-side">';
+  html += '<h4>' + t('replayReplay') + '</h4>';
+  if (running) {
+    html += '<div style="padding:20px;text-align:center">';
+    html += '<div class="progress-dot streaming" style="display:inline-block;margin-bottom:8px"></div>';
+    html += '<div style="font-size:0.75rem;color:#71717a">' + t('replayWaiting') + '</div>';
+    html += '</div>';
+  } else if (newVerdict.error) {
+    html += `<div style="color:#f87171;font-size:0.75rem">${escHtml(newVerdict.error)}</div>`;
+  } else {
+    html += `<div class="cmp-verdict ${newCfg.cls}">${newCfg.emoji} ${vdLabel(newVerdict.verdict)}</div>`;
+    html += `<div class="cmp-conf">${((newVerdict.confidence || 0) * 100).toFixed(0)}%</div>`;
+    html += '<div class="cmp-conf-sub">' + t('confidence') + '</div>';
+    if (newVerdict.explanation) {
+      html += `<div class="cmp-exp">${escHtml(newVerdict.explanation)}</div>`;
+    }
+
+    // Diff stats
+    if (orig.confidence !== undefined && newVerdict.confidence !== undefined) {
+      const delta = ((newVerdict.confidence - orig.confidence) * 100).toFixed(0);
+      const dir = delta >= 0 ? 'up' : 'down';
+      html += `<div class="cmp-diff">${t('replayConfidenceShift')}: <span class="${dir}">${delta > 0 ? '+' : ''}${delta}%</span></div>`;
+    }
+    html += `<a class="cmp-link" href="#" onclick="event.preventDefault();loadAuditById('${replay.runId}')">${t('auditViewTrail')}</a>`;
+  }
+  html += '</div>';
+
+  html += '</div>'; // cmp-body
+
+  replayBox.innerHTML = html;
+  show(replayBox);
+}
+
+// Helper: load audit by specific run ID
+async function loadAuditById(rid) {
+  auditBtn.disabled = true;
+  auditBtn.textContent = 'Loading…';
+  try {
+    const res = await fetch(API + '/api/v1/audit/' + rid);
+    if (!res.ok) throw new Error('Not found');
+    renderAudit(await res.json());
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    auditBtn.disabled = false;
+    auditBtn.textContent = 'Audit Trail';
+  }
+}
+
+/* ─── Cleanup ─── */
+window.addEventListener('beforeunload', disconnectSSE);
+</script>
+
+</body>
+</html>
