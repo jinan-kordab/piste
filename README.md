@@ -2,7 +2,18 @@
 
 > **Piste** (French for "trail") — every claim leaves a complete, replayable forensic audit trail.
 
-A multilingual fact-checking platform that combines LLMs, blind web retrieval, and an append-only audit ledger to verify political claims. Built with DSPy, FastAPI, PostgreSQL, Redis, and vanilla JavaScript.
+A multilingual fact-checking platform that combines LLMs, blind web retrieval, and an append-only audit ledger. Built with DSPy, FastAPI, PostgreSQL, Redis, and vanilla JavaScript.
+
+---
+
+## Why Piste?
+
+Most fact-checking tools search with the claim itself — baking in confirmation bias. **Piste is different:**
+
+- 🕶️ **Blind by design** — the retrieval engine never sees the original claim. No confirmation bias. Period.
+- 🔒 **Immutable audit trail** — every LLM call, every source, every vote is INSERT-only. Replay any verdict.
+- 🇨🇦 **Built for Canada & Québec** — bilingual EN/FR pipeline pre-configured for federal + provincial political discourse.
+- ⚙️ **Configurable** — currently tuned for political fact-checking, but the pipeline accepts any domain. Swap the search domains and criticality keywords, and you're checking science, health, or finance claims.
 
 ---
 
