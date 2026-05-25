@@ -32,6 +32,18 @@ Key architectural properties:
 
 ---
 
+## Screenshots
+
+**Claim verdict — French (Québec political fact-checking):**
+
+![FR Verdict](screenshot-fr-verdict.png)
+
+**Replay & Audit — comparing pipeline versions:**
+
+![FR Replay](screenshot-fr-replay.png)
+
+---
+
 ## Quick Start
 
 ### Prerequisites
