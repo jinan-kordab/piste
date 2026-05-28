@@ -14,6 +14,7 @@ Writes APPEND-ONLY classification records to PostgreSQL [C5].
 import asyncio
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, List
 from dataclasses import dataclass, field
 
@@ -55,6 +56,9 @@ class Stage3Orchestrator:
     Each source classified independently BEFORE aggregation.
     Parallel execution via asyncio.gather reduces latency.
     """
+
+    _semaphore: asyncio.Semaphore = asyncio.Semaphore(200)
+    _executor: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=200)
 
     def __init__(self, sse_callback: Optional[callable] = None):
         self.sse_callback = sse_callback
@@ -98,14 +102,10 @@ class Stage3Orchestrator:
         # --- Run N classifiers in parallel ---
         t0 = time.monotonic()
 
-        # Semaphore caps concurrent LLM calls to avoid overwhelming the API.
-        # 50 is safe for paid-tier DeepSeek / Together / Fireworks.
-        _sem = asyncio.Semaphore(50)
-
         async def _classify_with_limit(
             idx: int, claim: str, ev: CanonicalEvidence, loc: str
         ) -> ClassificationResult:
-            async with _sem:
+            async with self._semaphore:
                 return await self._classify_single(idx, claim, ev, loc)
 
         tasks = [
@@ -198,11 +198,13 @@ class Stage3Orchestrator:
         gather.  We off-load each call to a thread so the event loop stays
         free and N classifications truly run concurrently.
         """
-        label, confidence, rationale = await asyncio.to_thread(
+        loop = asyncio.get_running_loop()
+        label, confidence, rationale = await loop.run_in_executor(
+            self._executor,
             source_classifier,
-            claim=atomic_claim,
-            evidence=evidence,
-            locale=locale,
+            atomic_claim,
+            evidence,
+            locale,
         )
         return ClassificationResult(
             source_index=index,

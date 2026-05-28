@@ -211,14 +211,15 @@ class PipelineService:
             ]))
 
             # --- Create ONE aggregated Verdict per run [C5] ---
-            self._create_aggregate_verdict(db, run.run_id, s4_results, s1_result.atomic_claims)
+            agg = self._create_aggregate_verdict(db, run.run_id, s4_results, s1_result.atomic_claims)
 
             log(f"PIPELINE: all stages complete, finalizing run as completed")
             # Fix any placeholder run_ids that slipped through (safety net)
             await self._fix_stage_run_ids(db, run.run_id)
             await self._finalize_run(run, "completed", started_at)
             await db.commit()
-            log(f"PIPELINE: committed, emitting verdict_complete")
+            await self._emit("verdict_complete", agg)
+            log(f"PIPELINE: committed, emitted verdict_complete")
             record_claim_completed()
 
         except Exception as e:
@@ -294,16 +295,19 @@ class PipelineService:
     def _create_aggregate_verdict(
         self, db: AsyncSession, run_id: uuid.UUID,
         s4_results: list, atomic_claims: list[str],
-    ):
+    ) -> dict:
         """Create ONE Verdict per analysis run, aggregating all atomic claims.
-        
-        The Verdict model has unique=True on run_id — only ONE verdict per run.
-        We aggregate all per-atomic-claim results into a single final verdict.
+
+        If all atomics agree on the same verdict label, a single aggregate is
+        computed (majority, averaged confidence, merged distribution).
+
+        If atomics disagree, the verdict is "MIXED" and every atomic result is
+        surfaced individually so the user can see the split rather than a
+        meaningless compromise.
         """
         from collections import Counter
-        
+
         if not s4_results:
-            # No results at all — create UNVERIFIABLE verdict
             db.add(Verdict(
                 run_id=run_id,
                 verdict="UNVERIFIABLE",
@@ -313,44 +317,84 @@ class PipelineService:
                               "MOSTLY_FALSE": 0.0, "FALSE": 0.0, "PANTS_ON_FIRE": 0.0,
                               "UNVERIFIABLE": 1.0},
             ))
-            return
-        
-        # Count verdicts by label
+            return {"verdict": "UNVERIFIABLE", "confidence": 0.0,
+                    "explanation": "No atomic claims were processed.",
+                    "atomic_verdicts": []}
+
+        # --- Build per-atomic summaries ---
+        atomic_verdicts = []
+        unique_labels: set[str] = set()
+        for i, r in enumerate(s4_results):
+            label = r.verdict
+            unique_labels.add(label)
+            atomic_verdicts.append({
+                "index": i,
+                "claim": atomic_claims[i] if i < len(atomic_claims) else "",
+                "verdict": label,
+                "confidence": r.confidence,
+                "explanation": r.explanation,
+                "distribution": r.distribution,
+            })
+
+        # --- If atomics disagree, surface ALL results ---
+        if len(unique_labels) > 1:
+            labels_str = ", ".join(sorted(unique_labels))
+            explanation = (
+                f"Atomic claims disagree ({labels_str}).  "
+                f"See individual results below:\n"
+                + "\n".join(
+                    f"  Sub-claim {a['index']+1}: {a['verdict']} ({a['confidence']:.0%})"
+                    for a in atomic_verdicts
+                )
+            )
+            db.add(Verdict(
+                run_id=run_id,
+                verdict="MIXED",
+                confidence=0.0,
+                explanation=explanation,
+                distribution={"TRUE": 0.0, "MOSTLY_TRUE": 0.0, "HALF_TRUE": 0.0,
+                              "MOSTLY_FALSE": 0.0, "FALSE": 0.0, "PANTS_ON_FIRE": 0.0,
+                              "UNVERIFIABLE": 0.0},
+            ))
+            log(f"PIPELINE: atomics disagree → MIXED verdict ({labels_str})")
+            return {
+                "verdict": "MIXED",
+                "confidence": 0.0,
+                "explanation": explanation,
+                "atomic_verdicts": atomic_verdicts,
+            }
+
+        # --- All atomics agree — compute a single aggregate ---
         verdict_counts = Counter(r.verdict for r in s4_results)
-        # Use majority verdict (ties go to UNVERIFIABLE for safety)
-        majority_verdict = verdict_counts.most_common(1)[0][0] if verdict_counts else "UNVERIFIABLE"
-        
-        # Average confidence across atomic claims
+        majority_verdict = verdict_counts.most_common(1)[0][0]
+
         avg_confidence = sum(r.confidence for r in s4_results) / len(s4_results)
-        
-        # Merge distributions (average)
-        merged_dist = {}
-        all_labels = ["TRUE", "MOSTLY_TRUE", "HALF_TRUE", "MOSTLY_FALSE", 
+
+        merged_dist: dict[str, float] = {}
+        all_labels = ["TRUE", "MOSTLY_TRUE", "HALF_TRUE", "MOSTLY_FALSE",
                       "FALSE", "PANTS_ON_FIRE", "UNVERIFIABLE"]
         for label in all_labels:
             merged_dist[label] = sum(
                 r.distribution.get(label, 0.0) for r in s4_results
             ) / len(s4_results)
-        
-        # Build composite explanation
+
         if len(s4_results) == 1:
             explanation = s4_results[0].explanation
         else:
-            parts = [f"Atomic claim {i+1}: {r.verdict} ({r.confidence:.0%})" 
+            parts = [f"Atomic claim {i+1}: {r.verdict} ({r.confidence:.0%})"
                      for i, r in enumerate(s4_results)]
             explanation = (
                 f"Aggregated from {len(s4_results)} atomic claims:\n"
                 + "\n".join(parts)
                 + f"\n\nOverall verdict: {majority_verdict}"
             )
-        
-        # Check if any claim was routed to human review
+
         human_review = None
         for r in s4_results:
             if r.human_review:
                 human_review = r.human_review
                 break
-        
+
         db.add(Verdict(
             run_id=run_id,
             verdict=majority_verdict,
@@ -361,6 +405,13 @@ class PipelineService:
             human_review=human_review,
         ))
         log(f"PIPELINE: created aggregate Verdict: {majority_verdict} (from {len(s4_results)} atomic claims)")
+        return {
+            "verdict": majority_verdict,
+            "confidence": avg_confidence,
+            "explanation": explanation,
+            "distribution": merged_dist,
+            "atomic_verdicts": atomic_verdicts,
+        }
 
     async def _finalize_run(
         self, run: AnalysisRun, status: str, started_at: datetime

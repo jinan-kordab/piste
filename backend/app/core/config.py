@@ -13,7 +13,7 @@ from typing import List
 
 
 class Settings(BaseSettings):
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
     # --- App ---
     APP_NAME: str = "Piste"
@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     # --- LiteLLM ---
     LITELLM_MODEL: str = "deepseek/deepseek-chat"
     LITELLM_FALLBACK_MODELS: List[str] = ["deepseek/deepseek-chat", "claude-3-haiku-20240307"]
+    LITELLM_REQUEST_TIMEOUT: int = 600
     OPENAI_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
     DEEPSEEK_API_KEY: str = ""

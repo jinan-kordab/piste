@@ -155,7 +155,7 @@ class Stage4Orchestrator:
                 retry_attempt=0,
             ))
 
-        await self._emit("verdict_complete", {
+        await self._emit("atomic_verdict", {
             "atomic_claim": atomic_claim,
             "verdict": verdict,
             "confidence": confidence,

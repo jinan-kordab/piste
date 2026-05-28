@@ -255,6 +255,26 @@
   .bg-HALF_TRUE { background: #eab308; } .bg-MOSTLY_FALSE { background: #f97316; }
   .bg-FALSE { background: #dc2626; } .bg-PANTS_ON_FIRE { background: #991b1b; }
   .bg-UNVERIFIABLE { background: #71717a; }
+  .bg-MIXED { background: #7c3aed; }
+
+  /* MIXED verdict sub-cards */
+  .mixed-subcards { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+  .mixed-subcard {
+    border-radius: 12px; overflow: hidden;
+    border: 1px solid #27272a;
+  }
+  .mixed-subcard .subcard-header {
+    padding: 10px 16px;
+    font-size: 0.75rem; font-weight: 600;
+    color: rgba(255,255,255,0.8);
+  }
+  .mixed-subcard .subcard-body {
+    padding: 0 16px 14px;
+    font-size: 0.75rem; color: #a1a1aa; line-height: 1.5;
+  }
+  .mixed-subcard .subcard-claim {
+    font-style: italic; margin-bottom: 6px; color: #d4d4d8;
+  }
   .fill-TRUE { background: #16a34a !important; } .fill-MOSTLY_TRUE { background: #22c55e !important; }
   .fill-HALF_TRUE { background: #eab308 !important; } .fill-MOSTLY_FALSE { background: #f97316 !important; }
   .fill-FALSE { background: #dc2626 !important; } .fill-PANTS_ON_FIRE { background: #991b1b !important; }
@@ -378,6 +398,7 @@ const VD = {
   FALSE:       { emoji: '❌', label: 'False',           labelFr: 'Faux',          cls: 'bg-FALSE' },
   PANTS_ON_FIRE:{ emoji: '🔥', label: 'Pants on Fire',  labelFr: 'Faux absolu',   cls: 'bg-PANTS_ON_FIRE' },
   UNVERIFIABLE: { emoji: '❓', label: 'Unverifiable',    labelFr: 'Invérifiable',  cls: 'bg-UNVERIFIABLE' },
+  MIXED:       { emoji: '⚡', label: 'Mixed — claims disagree', labelFr: 'Mixte — désaccord', cls: 'bg-MIXED' },
 };
 
 function vdLabel(key) {
@@ -409,6 +430,8 @@ const T = {
     criticalityDone: 'Criticality determined',
     verdictReady: 'Verdict ready',
     confidence: 'confidence',
+    disagree: 'claims disagree',
+    disagree: 'claims disagree',
     sourcesRetrieved: '{n} source{s} retrieved · {c} classified',
     auditTitle: '🔍 Full Forensic Audit Trail',
     auditPipeline: 'Pipeline',
@@ -470,6 +493,7 @@ const T = {
     criticalityDone: 'Criticité déterminée',
     verdictReady: 'Verdict prêt',
     confidence: 'confiance',
+    disagree: 'désaccord',
     sourcesRetrieved: '{n} source{s} récupérée{s} · {c} classifiée{s}',
     auditTitle: '🔍 Piste d\'audit judiciaire complète',
     auditPipeline: 'Pipeline',
@@ -615,6 +639,7 @@ function connectSSE(runId) {
         confidence: d.confidence,
         explanation: d.explanation,
         distribution: d.distribution,
+        atomic_verdicts: d.atomic_verdicts || [],
       };
       setStage('complete');
       progressLabel.textContent = t('verdictReady');
@@ -702,27 +727,50 @@ function renderVerdict() {
       <div class="label">${vdLabel(v.verdict)}</div>
     </div>
     <div class="confidence">
-      <div class="pct">${(v.confidence * 100).toFixed(0)}%</div>
-      <div class="sub" id="confLabel">confidence</div>
+      <div class="pct">${v.verdict === 'MIXED' ? '—' : (v.confidence * 100).toFixed(0) + '%'}</div>
+      <div class="sub" id="confLabel">${v.verdict === 'MIXED' ? t('disagree') : t('confidence')}</div>
     </div>`;
 
   verdictExplanation.textContent = v.explanation;
   // Update confidence label
-  const cl = document.getElementById('confLabel'); if (cl) cl.textContent = t('confidence');
+  const cl = document.getElementById('confLabel'); if (cl) cl.textContent = v.verdict === 'MIXED' ? t('disagree') : t('confidence');
 
-  // Distribution bars
+  // Distribution bars — skip for MIXED (meaningless)
   verdictBars.innerHTML = '';
-  const entries = Object.entries(v.distribution || {})
-    .sort((a, b) => b[1] - a[1]);
-  for (const [label, score] of entries) {
-    const dc = VD[label] || { label, cls: 'fill-UNVERIFIABLE' };
-    const row = document.createElement('div');
-    row.className = 'verdict-bar-row';
-    row.innerHTML = `
-      <span class="bar-name">${vdLabel(label)}</span>
-      <div class="bar-track"><div class="bar-fill ${dc.cls}" style="width:${(score * 100).toFixed(0)}%"></div></div>
-      <span class="bar-pct">${(score * 100).toFixed(0)}%</span>`;
-    verdictBars.appendChild(row);
+  if (v.verdict !== 'MIXED' && v.distribution) {
+    const entries = Object.entries(v.distribution)
+      .sort((a, b) => b[1] - a[1]);
+    for (const [label, score] of entries) {
+      const dc = VD[label] || { label, cls: 'fill-UNVERIFIABLE' };
+      const row = document.createElement('div');
+      row.className = 'verdict-bar-row';
+      row.innerHTML = `
+        <span class="bar-name">${vdLabel(label)}</span>
+        <div class="bar-track"><div class="bar-fill ${dc.cls}" style="width:${(score * 100).toFixed(0)}%"></div></div>
+        <span class="bar-pct">${(score * 100).toFixed(0)}%</span>`;
+      verdictBars.appendChild(row);
+    }
+  }
+
+  // MIXED: render per-atomic sub-cards
+  if (v.verdict === 'MIXED' && v.atomic_verdicts && v.atomic_verdicts.length > 0) {
+    const container = document.createElement('div');
+    container.className = 'mixed-subcards';
+    for (const a of v.atomic_verdicts) {
+      const acfg = VD[a.verdict] || VD.UNVERIFIABLE;
+      const card = document.createElement('div');
+      card.className = 'mixed-subcard';
+      card.innerHTML = `
+        <div class="subcard-header ${acfg.cls}">
+          ${acfg.emoji} ${vdLabel(a.verdict)} · ${(a.confidence * 100).toFixed(0)}%
+        </div>
+        <div class="subcard-body">
+          <div class="subcard-claim">${escHtml(a.claim)}</div>
+          <div>${escHtml(a.explanation)}</div>
+        </div>`;
+      container.appendChild(card);
+    }
+    verdictBars.appendChild(container);
   }
 
   // Sources
