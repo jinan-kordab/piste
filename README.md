@@ -37,9 +37,16 @@ Key architectural properties:
 - **Multi-provider search** — Tavily (AI search) + Serper (Google proxy) aggregated concurrently with graceful fallback.
 - **Bilingual** — Full EN/FR support across UI, pipeline stages, verdict labels, and LLM-generated explanations.
 
-![Piste Architecture Diagram](architecture.png)
+```mermaid
+flowchart LR
+    A[Claim] --> B[Stage 1<br/>Check-Worthiness]
+    B --> C[Stage 2<br/>Blind Retrieval]
+    C --> D[Stage 3<br/>Classification]
+    D --> E[Stage 4<br/>Verdict]
+    E --> F[(Audit Ledger)]
+```
 
-**[View source →](FINAL.mermaid)**
+**[View full architecture →](FINAL.mermaid)**
 
 ---
 
