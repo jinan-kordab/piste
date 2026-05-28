@@ -86,6 +86,14 @@ This starts three containers:
 - **Redis 7.2** — idempotency guard + verdict cache (port 6379)
 - **FastAPI backend** — pipeline + API (port 8000)
 
+The backend automatically runs `alembic upgrade head` on startup, so the
+schema is provisioned on first boot. If you ever need to apply migrations
+manually (e.g. after editing a revision), run:
+
+```bash
+docker compose -f docker/docker-compose.yml exec backend alembic upgrade head
+```
+
 Verify:
 ```bash
 curl http://localhost:8000/health

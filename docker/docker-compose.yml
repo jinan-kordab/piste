@@ -5,7 +5,6 @@
 # Piste — Docker Compose
 # Services: PostgreSQL 16, Redis 7.2, Backend, Frontend
 # ============================================================
-version: "3.9"
 
 services:
   # --- PostgreSQL 16 — Append-Only Audit Ledger [C5] ---

@@ -14,14 +14,35 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 
 
+def _run_alembic_upgrade() -> None:
+    """Apply pending Alembic migrations (blocking; call via asyncio.to_thread)."""
+    import os
+    from alembic import command
+    from alembic.config import Config
+
+    ini_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__)))), "alembic.ini")
+    # Fallback for container layout where alembic.ini lives at /app/alembic.ini
+    if not os.path.exists(ini_path):
+        ini_path = "/app/alembic.ini"
+    cfg = Config(ini_path)
+    command.upgrade(cfg, "head")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
     # Startup: init DB pool, Redis, DSPy
+    import asyncio
     from app.db.session import engine
     from app.services.cache import redis_client
     from pipeline.compiler import configure_dspy
     from app.core.debuglog import log
+
+    # Apply DB migrations before anything else touches the database.
+    log("LIFESPAN: running Alembic migrations...")
+    await asyncio.to_thread(_run_alembic_upgrade)
+    log("LIFESPAN: migrations up to date")
 
     await redis_client.connect()
     log("LIFESPAN: Redis connected, configuring DSPy...")
