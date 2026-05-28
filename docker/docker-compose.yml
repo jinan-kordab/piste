@@ -58,6 +58,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://piste:piste@postgres:5432/piste
       DATABASE_URL_SYNC: postgresql+psycopg2://piste:piste@postgres:5432/piste
       REDIS_URL: redis://redis:6379/0
+      HTTPX_MAX_CONNECTIONS: 100
+      HTTPX_MAX_KEEPALIVE_CONNECTIONS: 100
     depends_on:
       postgres:
         condition: service_healthy

@@ -98,8 +98,18 @@ class Stage3Orchestrator:
         # --- Run N classifiers in parallel ---
         t0 = time.monotonic()
 
+        # Semaphore caps concurrent LLM calls to avoid overwhelming the API.
+        # 50 is safe for paid-tier DeepSeek / Together / Fireworks.
+        _sem = asyncio.Semaphore(50)
+
+        async def _classify_with_limit(
+            idx: int, claim: str, ev: CanonicalEvidence, loc: str
+        ) -> ClassificationResult:
+            async with _sem:
+                return await self._classify_single(idx, claim, ev, loc)
+
         tasks = [
-            self._classify_single(i, atomic_claim, evidence, locale)
+            _classify_with_limit(i, atomic_claim, evidence, locale)
             for i, evidence in enumerate(evidence_list)
         ]
         results: List[ClassificationResult] = await asyncio.gather(*tasks)
@@ -181,8 +191,15 @@ class Stage3Orchestrator:
         evidence: CanonicalEvidence,
         locale: str = "en",
     ) -> ClassificationResult:
-        """Classify a single source (runs in parallel via asyncio.gather)."""
-        label, confidence, rationale = source_classifier(
+        """Classify a single source (runs in parallel via asyncio.gather).
+
+        The DSPy source_classifier is synchronous and would block the asyncio
+        event loop on every LLM call, forcing serial execution despite the
+        gather.  We off-load each call to a thread so the event loop stays
+        free and N classifications truly run concurrently.
+        """
+        label, confidence, rationale = await asyncio.to_thread(
+            source_classifier,
             claim=atomic_claim,
             evidence=evidence,
             locale=locale,

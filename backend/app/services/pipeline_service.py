@@ -177,28 +177,38 @@ class PipelineService:
             # --- Stage 3: Per-Source Classification ---
             from pipeline.stage3.orchestrator import Stage3Orchestrator
             s3_orchestrator = Stage3Orchestrator(sse_callback=self._emit)
-            # Classify each atomic claim's evidence in parallel
-            s3_results = []
-            for i, atomic_claim in enumerate(s1_result.atomic_claims):
-                # Match evidence to claim
+
+            # Each atomic claim's evidence classifications are independent —
+            # run them concurrently rather than sequentially.
+            async def _classify_one_atomic(i: int, atomic_claim: str):
                 claim_evidence = [
                     ev for ev in all_evidence
                     if getattr(ev, "query_used", "").startswith(atomic_claim[:20])
-                ] if i == 0 else all_evidence  # Simple matching; refine in production
-                s3_result = await s3_orchestrator.process(
-                    atomic_claim, claim_evidence or all_evidence, db=db, run_id=run.run_id, locale=locale
+                ] if i == 0 else all_evidence
+                return await s3_orchestrator.process(
+                    atomic_claim, claim_evidence or all_evidence,
+                    db=db, run_id=run.run_id, locale=locale,
                 )
-                s3_results.append(s3_result)
+
+            s3_results = await asyncio.gather(*[
+                _classify_one_atomic(i, ac)
+                for i, ac in enumerate(s1_result.atomic_claims)
+            ])
+            s3_results = list(s3_results)  # gather returns tuple
 
             # --- Stage 4: Verdict Aggregation ---
             from pipeline.stage4.orchestrator import Stage4Orchestrator
             s4_orchestrator = Stage4Orchestrator(sse_callback=self._emit)
-            s4_results = []
-            for s3r in s3_results:
-                s4_result = await s4_orchestrator.process(
-                    s3r.atomic_claim, s3r, db=db, run_id=run.run_id, locale=locale
+
+            # Per-atomic verdicts are also independent — run concurrently.
+            async def _verdict_one_atomic(s3r):
+                return await s4_orchestrator.process(
+                    s3r.atomic_claim, s3r, db=db, run_id=run.run_id, locale=locale,
                 )
-                s4_results.append(s4_result)
+
+            s4_results = list(await asyncio.gather(*[
+                _verdict_one_atomic(s3r) for s3r in s3_results
+            ]))
 
             # --- Create ONE aggregated Verdict per run [C5] ---
             self._create_aggregate_verdict(db, run.run_id, s4_results, s1_result.atomic_claims)
