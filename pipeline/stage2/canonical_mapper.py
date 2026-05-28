@@ -20,7 +20,8 @@ ONLY a new adapter — zero changes to the verification pipeline.
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List
+from typing import List, Optional
+from uuid import UUID
 
 from pipeline.stage2.blind_retriever import RawSearchResult
 
@@ -39,6 +40,9 @@ class CanonicalEvidence:
       - retrieval_ts: ISO 8601 timestamp of retrieval
       - query_used: The search query that found this source
       - provider: Which search provider returned this (tavily, serper, google_cse, faiss)
+      - db_id: PK of the persisted Source row — set by Stage 2 after insert,
+               consumed by Stage 3 to populate classifications.source_id (FK).
+               Ephemeral, not serialized into the JSONB blob.
     """
     title: str
     url: str
@@ -48,6 +52,7 @@ class CanonicalEvidence:
     retrieval_ts: str = field(default_factory=lambda: datetime.utcnow().isoformat())
     query_used: str = ""
     provider: str = ""
+    db_id: Optional[UUID] = None
 
 
 class CanonicalEvidenceMapper:
@@ -114,4 +119,6 @@ class CanonicalEvidenceMapper:
     @staticmethod
     def from_dict(data: dict) -> CanonicalEvidence:
         """Deserialize CanonicalEvidence from JSONB dict."""
-        return CanonicalEvidence(**data)
+        # db_id is not stored in JSONB (it's the row PK itself); strip if present.
+        clean = {k: v for k, v in data.items() if k != "db_id"}
+        return CanonicalEvidence(**clean)

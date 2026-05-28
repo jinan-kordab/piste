@@ -181,9 +181,14 @@ class Stage2Orchestrator:
             )
 
         # --- Write sources to PostgreSQL ---
+        # Generate the Source PK up-front and attach it to the in-memory
+        # CanonicalEvidence so Stage 3 can populate classifications.source_id
+        # (FK to sources.id) without an extra DB roundtrip.
         if db:
             for ev in all_evidence:
+                ev.db_id = uuid.uuid4()
                 db.add(Source(
+                    id=ev.db_id,
                     run_id=run_id or uuid.uuid4(),
                     url=ev.url,
                     domain=ev.source_domain,

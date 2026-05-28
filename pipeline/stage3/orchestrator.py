@@ -114,9 +114,12 @@ class Stage3Orchestrator:
         # --- Write to PostgreSQL (append-only) ---
         if db:
             for r in results:
+                # Stage 2 attached the Source row PK to the in-memory evidence
+                # at insertion time; reuse it here as the FK.
+                ev = evidence_list[r.source_index]
                 db.add(Classification(
                     run_id=run_id or uuid.UUID("00000000-0000-0000-0000-000000000000"),
-                    source_id=None,  # TODO: link to Source by URL in Phase 8
+                    source_id=ev.db_id,
                     label=r.label,
                     confidence=r.confidence,
                     rationale=r.rationale,
